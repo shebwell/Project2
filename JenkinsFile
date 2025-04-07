@@ -1,21 +1,47 @@
 pipeline {
-    agent any
+    agent {
+        label 'amazon-linux-agent'
+    }
+    
+    environment {
+        APP_VERSION = "${env.BUILD_NUMBER}"
+        NEXUS_URL = "[nexus-ip]:8081"
+    }
+    
     stages {
-        stage('Build') {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Package') {
             steps {
                 sh 'npm install'
+                sh 'mkdir -p dist'
+                sh 'cp -r index.js init.js package.json node_modules dist/'
+                sh 'cd dist && zip -r ../node-app-${APP_VERSION}.zip *'
             }
         }
-        stage('Test') {
+        
+        stage('Upload to Nexus') {
             steps {
-                sh 'npm test'
+                sh """
+                curl -v -u admin:password --upload-file node-app-${APP_VERSION}.zip \
+                http://${NEXUS_URL}/repository/node-app-repo/node-app-${APP_VERSION}.zip
+                """
             }
         }
+        
         stage('Deploy') {
             steps {
-                sh 'echo "Deploying application..."'
-                // Add deployment steps here
+                sh """
+                cd ansible
+                ansible-playbook deploy.yml -i inventory.ini -e "app_version=${APP_VERSION}"
+                """
             }
         }
     }
 }
+
+ 
